@@ -243,64 +243,50 @@
 		if(processCallback)
 			processCallback(processCount);
 	}
-	async function initCheerpX()
-	{
-		const CheerpX = await import('@leaningtech/cheerpx');
-		var blockDevice = null;
-		switch(configObj.diskImageType)
-		{
-			case "cloud":
-				try
-				{
-					blockDevice = await CheerpX.CloudDevice.create(configObj.diskImageUrl);
-				}
-				catch(e)
-				{
-					// Report the failure and try again with plain HTTP
-					var wssProtocol = "wss:";
-					if(configObj.diskImageUrl.startsWith(wssProtocol))
-					{
-						// WebSocket protocol failed, try agin using plain HTTP
-						tryPlausible("WS Disk failure");
-						blockDevice = await CheerpX.CloudDevice.create("https:" + configObj.diskImageUrl.substr(wssProtocol.length));
-					}
-					else
-					{
-						// No other recovery option
-						throw e;
-					}
-				}
-				break;
-			case "bytes":
-				blockDevice = await CheerpX.HttpBytesDevice.create(configObj.diskImageUrl);
-				break;
-			case "github":
-				blockDevice = await CheerpX.GitHubDevice.create(configObj.diskImageUrl);
-				break;
-			default:
-				throw new Error("Unrecognized device type");
-		}
+	async function initCheerpX() {
+    const CheerpX = await import('@leaningtech/cheerpx');
+    var blockDevice = null;
+    
+    // ... your existing switch logic to get the cloud device ...
+    const cloudDevice = await CheerpX.CloudDevice.create(configObj.diskImageUrl);
+
+    // ADD THIS: Create a local writable storage
+    const idbDevice = await CheerpX.IDBDevice.create("webvm_drive");
+    
+    // ADD THIS: Create the overlay
+    // The overlay makes the filesystem "writable" by redirecting 
+    // all writes to IndexedDB while reading from the Cloud.
+    blockDevice = await CheerpX.OverlayDevice.create(cloudDevice, idbDevice);
+
+    // When you initialize the Linux instance later in the code:
+    const cx = await CheerpX.Linux.create({
+        mounts: [
+            { type: "ext2", path: "/", dev: blockDevice },
+            { type: "devs", path: "/dev" }
+        ],
+    });
+}
 		blockCache = await CheerpX.IDBDevice.create(cacheId);
 		var overlayDevice = await CheerpX.OverlayDevice.create(blockDevice, blockCache);
 		var webDevice = await CheerpX.WebDevice.create("");
 		var documentsDevice = await CheerpX.WebDevice.create("documents");
 		var dataDevice = await CheerpX.DataDevice.create();
 		var mountPoints = [
-			// The root filesystem, as an Ext2 image
+			
 			{type:"ext2", dev:overlayDevice, path:"/"},
-			// Access to files on the Web server, relative to the current page
+			
 			{type:"dir", dev:webDevice, path:"/web"},
-			// Access to read-only data coming from JavaScript
+			
 			{type:"dir", dev:dataDevice, path:"/data"},
-			// Automatically created device files
+			
 			{type:"devs", path:"/dev"},
-			// Pseudo-terminals
+		
 			{type:"devpts", path:"/dev/pts"},
-			// The Linux 'proc' filesystem which provides information about running processes
+			
 			{type:"proc", path:"/proc"},
-			// The Linux 'sysfs' filesystem which is used to enumerate emulated devices
+			
 			{type:"sys", path:"/sys"},
-			// Convenient access to sample documents in the user directory
+			
 			{type:"dir", dev:documentsDevice, path:"/home/user/documents"}
 		];
 		try
