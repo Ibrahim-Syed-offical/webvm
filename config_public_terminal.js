@@ -19,5 +19,5 @@ export const opts = {
 	// User id
 	uid: 0,
 	// Group id
-	gid: 1000
+	gid: 0
 };

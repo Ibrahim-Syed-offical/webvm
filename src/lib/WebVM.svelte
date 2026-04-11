@@ -243,77 +243,69 @@
 		if(processCallback)
 			processCallback(processCount);
 	}
-	async function initCheerpX() {
-    const CheerpX = await import('@leaningtech/cheerpx');
-    var blockDevice = null;
-    
-    // ... your existing switch logic to get the cloud device ...
-    const cloudDevice = await CheerpX.CloudDevice.create(configObj.diskImageUrl);
+	async function initCheerpX() 
+	{
+		const CheerpX = await import('@leaningtech/cheerpx');
+		var blockDevice = null;
+		
+		// 1. Get the base cloud image
+		const cloudDevice = await CheerpX.CloudDevice.create(configObj.diskImageUrl);
 
-    // ADD THIS: Create a local writable storage
-    const idbDevice = await CheerpX.IDBDevice.create("webvm_drive");
-    
-    // ADD THIS: Create the overlay
-    // The overlay makes the filesystem "writable" by redirecting 
-    // all writes to IndexedDB while reading from the Cloud.
-    blockDevice = await CheerpX.OverlayDevice.create(cloudDevice, idbDevice);
+		// 2. Create local persistent storage (IndexedDB)
+		const idbDevice = await CheerpX.IDBDevice.create("webvm_drive");
+		
+		// 3. Create the Overlay (Cloud + IDB)
+		// This makes the system writable so 'touch' works!
+		blockDevice = await CheerpX.OverlayDevice.create(cloudDevice, idbDevice);
 
-    // When you initialize the Linux instance later in the code:
-    const cx = await CheerpX.Linux.create({
-        mounts: [
-            { type: "ext2", path: "/", dev: blockDevice },
-            { type: "devs", path: "/dev" }
-        ],
-    });
-}
-		blockCache = await CheerpX.IDBDevice.create(cacheId);
-		var overlayDevice = await CheerpX.OverlayDevice.create(blockDevice, blockCache);
+		// Setup other devices
 		var webDevice = await CheerpX.WebDevice.create("");
 		var documentsDevice = await CheerpX.WebDevice.create("documents");
 		var dataDevice = await CheerpX.DataDevice.create();
+
+		// 4. Define your Mount Points
 		var mountPoints = [
-			
-			{type:"ext2", dev:overlayDevice, path:"/"},
-			
-			{type:"dir", dev:webDevice, path:"/web"},
-			
-			{type:"dir", dev:dataDevice, path:"/data"},
-			
-			{type:"devs", path:"/dev"},
-		
-			{type:"devpts", path:"/dev/pts"},
-			
-			{type:"proc", path:"/proc"},
-			
-			{type:"sys", path:"/sys"},
-			
-			{type:"dir", dev:documentsDevice, path:"/home/user/documents"}
+			{type: "ext2", dev: blockDevice, path: "/"}, // Use the overlay here
+			{type: "dir", dev: webDevice, path: "/web"},
+			{type: "dir", dev: dataDevice, path: "/data"},
+			{type: "devs", path: "/dev"},
+			{type: "devpts", path: "/dev/pts"},
+			{type: "proc", path: "/proc"},
+			{type: "sys", path: "/sys"},
+			{type: "dir", dev: documentsDevice, path: "/home/user/documents"}
 		];
-		try
-		{
-			cx = await CheerpX.Linux.create({mounts: mountPoints, networkInterface: networkInterface});
-		}
-		catch(e)
-		{
+
+		try {
+			// 5. Initialize Linux with your mounts
+			cx = await CheerpX.Linux.create({
+				mounts: mountPoints, 
+				networkInterface: networkInterface
+			});
+		} catch(e) {
 			printMessage(errorMessage);
 			printMessage([e.toString()]);
-			return;
+			return; // This return is now valid inside the function
 		}
+
+		// Callbacks and terminal setup
 		cx.registerCallback("cpuActivity", cpuCallback);
 		cx.registerCallback("diskActivity", hddCallback);
 		cx.registerCallback("diskLatency", latencyCallback);
 		cx.registerCallback("processCreated", handleProcessCreated);
+		
 		term.scrollToBottom();
 		cxReadFunc = cx.setCustomConsole(writeData, term.cols, term.rows);
+
 		const display = document.getElementById("display");
-		if(display)
-		{
+		if(display) {
 			setScreenSize(display);
 			cx.setActivateConsole(handleActivateConsole);
 		}
-		// Run the command in a loop, in case the user exits
-		while (true)
-		{
+
+		// 6. The Run Loop
+		while (true) {
+			// Ensure configObj.opts contains { env: ["USER=root", "HOME=/root"] } 
+			// in your config_public_terminal.js for full root access
 			await cx.run(configObj.cmd, configObj.args, configObj.opts);
 		}
 	}
